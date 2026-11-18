@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+._*
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Local tool settings (contain machine-specific commands and IPs)
+.claude/settings.local.json
+
+# Vendor manuals are copyrighted: download them locally, do not commit
+Docs/*.pdf
+
+# Captures and logs
+*.npz
+logs/
+
+# Planning documents (internal working notes)
+PLAN*.md
+plans/

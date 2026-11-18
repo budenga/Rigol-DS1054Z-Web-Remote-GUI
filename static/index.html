@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rigol DS1054Z Web Remote</title>
+    <script>
+        // Apply the stored theme before first paint (no flash). theme.js takes over afterwards.
+        try {
+            var t = localStorage.getItem('ds1054z.theme');
+            if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+        } catch (e) { /* storage unavailable */ }
+    </script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- Top bar -->
+<header class="top-bar">
+    <h1>RIGOL DS1054Z <span>Web Remote</span></h1>
+    <div class="connection-badge">
+        <div class="connection-dot" id="conn-dot"></div>
+        <span id="conn-text">Disconnected</span>
+    </div>
+
+    <div class="segmented" id="view-switch" role="tablist" aria-label="View">
+        <button role="tab" data-view="scope" aria-selected="true">Scope</button>
+        <button role="tab" data-view="analysis" aria-selected="false">Power analysis</button>
+    </div>
+
+    <div class="acq-group">
+        <div class="segmented" id="acq-mode" role="radiogroup" aria-label="Acquisition mode">
+            <button role="radio" data-mode="single" aria-checked="true">Single</button>
+            <button role="radio" data-mode="repeat" aria-checked="false">Repeat</button>
+            <button role="radio" data-mode="free" aria-checked="false">Free</button>
+        </div>
+        <button class="btn primary" id="btn-capture" title="Capture (C)">Capture</button>
+        <button class="btn" id="btn-cancel" hidden>Cancel</button>
+    </div>
+
+    <div class="status-pill" id="status-pill" data-state="stopped" role="status">
+        <span class="dot"></span>
+        <span id="status-pill-text">Stopped</span>
+        <span class="pill-meta" id="status-pill-meta"></span>
+    </div>
+
+    <span class="top-spacer"></span>
+    <button class="btn" id="btn-theme" title="Theme (T)">Theme: System</button>
+</header>
+
+<!-- ═══ Scope view ═══ -->
+<div class="main-layout" id="view-scope">
+
+    <!-- ── Left panel: Channel controls ── -->
+    <div class="panel" id="panel-left">
+
+        <!-- Run/Stop/Single -->
+        <div class="panel-section">
+            <div class="panel-section-title">Scope control</div>
+            <div class="btn-row">
+                <button class="btn run" id="btn-run">Run</button>
+                <button class="btn stop" id="btn-stop">Stop</button>
+                <button class="btn single" id="btn-single">Single</button>
+            </div>
+            <div class="btn-row">
+                <button class="btn auto-btn" id="btn-auto">Auto</button>
+                <button class="btn force" id="btn-force">Force</button>
+            </div>
+        </div>
+
+        <!-- Channel toggles -->
+        <div class="panel-section">
+            <div class="panel-section-title">Channels</div>
+            <div class="btn-row" id="ch-toggles">
+                <div class="ch-toggle ch1 off" data-ch="1">CH1</div>
+                <div class="ch-toggle ch2 off" data-ch="2">CH2</div>
+                <div class="ch-toggle ch3 off" data-ch="3">CH3</div>
+                <div class="ch-toggle ch4 off" data-ch="4">CH4</div>
+            </div>
+        </div>
+
+        <!-- Per-channel controls (CH1-CH4) -->
+        <div id="channel-controls">
+            <!-- Populated by controls.js -->
+        </div>
+
+    </div>
+
+    <!-- ── Center column: Canvas + Status bar ── -->
+    <div class="center-column">
+        <div class="canvas-container" id="canvas-container">
+            <canvas id="scope-canvas"></canvas>
+            <span class="badge warn canvas-badge" id="scope-incoherent" hidden>Channels may be from different triggers</span>
+        </div>
+        <div class="status-bar" id="status-bar">
+            <div class="status-item">
+                <span class="label">Status:</span>
+                <span class="status-trigger stop" id="status-trig">STOP</span>
+            </div>
+            <div class="status-item">
+                <span class="label">Time:</span>
+                <span class="value" id="status-time">1 ms/div</span>
+            </div>
+            <div class="status-item">
+                <span class="label">Sa/s:</span>
+                <span class="value" id="status-srate">--</span>
+            </div>
+            <div class="status-item">
+                <span class="label">Mem:</span>
+                <span class="value" id="status-mem">--</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Right panel: Measurements + Trigger + Save ── -->
+    <div class="panel" id="panel-right">
+
+        <!-- Measurements -->
+        <div class="panel-section">
+            <div class="panel-section-title">Measurements</div>
+            <div id="meas-container">
+                <table class="meas-table" id="meas-table">
+                    <thead>
+                        <tr>
+                            <th></th>
+                            <th class="meas-ch1">CH1</th>
+                            <th class="meas-ch2">CH2</th>
+                            <th class="meas-ch3">CH3</th>
+                            <th class="meas-ch4">CH4</th>
+                        </tr>
+                    </thead>
+                    <tbody id="meas-tbody"></tbody>
+                </table>
+                <div class="toggle-row">
+                    <label for="meas-enable">Measure on capture</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="meas-enable" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="meas-note" id="meas-note">Values appear with the next capture.</div>
+            </div>
+        </div>
+
+        <!-- Trigger controls -->
+        <div class="panel-section">
+            <div class="panel-section-title">Trigger</div>
+
+            <div class="ctrl-select">
+                <label>Source</label>
+                <select id="trig-source">
+                    <option value="CHAN1">CH1</option>
+                    <option value="CHAN2">CH2</option>
+                    <option value="CHAN3">CH3</option>
+                    <option value="CHAN4">CH4</option>
+                    <option value="AC">AC Line</option>
+                </select>
+            </div>
+
+            <div class="ctrl-select">
+                <label>Slope</label>
+                <select id="trig-slope">
+                    <option value="POS">Rising</option>
+                    <option value="NEG">Falling</option>
+                    <option value="RFAL">Both</option>
+                </select>
+            </div>
+
+            <div class="ctrl-select">
+                <label>Sweep</label>
+                <select id="trig-sweep">
+                    <option value="AUTO">Auto</option>
+                    <option value="NORM">Normal</option>
+                    <option value="SING">Single</option>
+                </select>
+            </div>
+
+            <div class="knob-control" id="trig-level-knob">
+                <span class="knob-label">Level</span>
+                <span class="knob-value" id="trig-level-val">0 V</span>
+            </div>
+        </div>
+
+        <!-- Timebase -->
+        <div class="panel-section">
+            <div class="panel-section-title">Timebase</div>
+            <div class="knob-control" id="time-div-knob">
+                <span class="knob-label">Time/div</span>
+                <span class="knob-value" id="time-div-val">1 ms</span>
+            </div>
+            <div class="knob-control" id="time-offset-knob">
+                <span class="knob-label">Offset</span>
+                <span class="knob-value" id="time-offset-val">0 s</span>
+            </div>
+        </div>
+
+        <!-- Decoder (collapsible) -->
+        <div class="panel-section collapsed-section" id="decoder-section">
+            <div class="panel-section-title collapsible-title" id="decoder-header">
+                Decoder <span class="collapse-arrow">&#9654;</span>
+            </div>
+            <div class="collapsible-body" id="decoder-body" style="display:none;">
+
+            <!-- Decoder 1 -->
+            <div class="decoder-slot" id="dec-slot-1">
+                <div class="decoder-slot-header" data-dec="1">
+                    <span class="decoder-slot-label">Decoder 1</span>
+                    <span class="decoder-collapse-icon">&#9660;</span>
+                </div>
+                <div class="decoder-slot-body" id="dec-body-1">
+                    <div class="ctrl-select">
+                        <label>Mode</label>
+                        <select id="dec1-mode">
+                            <option value="OFF">OFF</option>
+                            <option value="UART">UART</option>
+                            <option value="IIC">IIC</option>
+                            <option value="SPI">SPI</option>
+                            <option value="PAR">PARALLEL</option>
+                        </select>
+                    </div>
+                    <div class="toggle-row">
+                        <label>Display</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="dec1-display">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="ctrl-select">
+                        <label>Format</label>
+                        <select id="dec1-format">
+                            <option value="HEX">HEX</option>
+                            <option value="ASC">ASCII</option>
+                            <option value="DEC">DEC</option>
+                            <option value="OCT">OCT</option>
+                            <option value="BIN">BIN</option>
+                        </select>
+                    </div>
+
+                    <!-- UART config -->
+                    <div class="decoder-config" id="dec1-uart-cfg" style="display:none">
+                        <div class="decoder-config-title">UART Settings</div>
+                        <div class="ctrl-select">
+                            <label>TX</label>
+                            <select id="dec1-uart-tx">
+                                <option value="OFF">OFF</option>
+                                <option value="CHAN1">CH1</option>
+                                <option value="CHAN2">CH2</option>
+                                <option value="CHAN3">CH3</option>
+                                <option value="CHAN4">CH4</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>RX</label>
+                            <select id="dec1-uart-rx">
+                                <option value="OFF">OFF</option>
+                                <option value="CHAN1">CH1</option>
+                                <option value="CHAN2">CH2</option>
+                                <option value="CHAN3">CH3</option>
+                                <option value="CHAN4">CH4</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Baud</label>
+                            <input type="number" class="ctrl-input" id="dec1-uart-baud" value="9600" min="110" max="20000000">
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Polarity</label>
+                            <select id="dec1-uart-pol">
+                                <option value="NEG">Normal</option>
+                                <option value="POS">Invert</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Data bits</label>
+                            <select id="dec1-uart-width">
+                                <option value="5">5</option>
+                                <option value="6">6</option>
+                                <option value="7">7</option>
+                                <option value="8" selected>8</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Stop bits</label>
+                            <select id="dec1-uart-stop">
+                                <option value="1" selected>1</option>
+                                <option value="1.5">1.5</option>
+                                <option value="2">2</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Parity</label>
+                            <select id="dec1-uart-par">
+                                <option value="NONE" selected>None</option>
+                                <option value="EVEN">Even</option>
+                                <option value="ODD">Odd</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Endian</label>
+                            <select id="dec1-uart-end">
+                                <option value="LSB" selected>LSB</option>
+                                <option value="MSB">MSB</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- IIC config -->
+                    <div class="decoder-config" id="dec1-iic-cfg" style="display:none">
+                        <div class="decoder-config-title">IIC Settings</div>
+                        <div class="ctrl-select">
+                            <label>SCL</label>
+                            <select id="dec1-iic-clk">
+                                <option value="CHAN1">CH1</option>
+                                <option value="CHAN2">CH2</option>
+                                <option value="CHAN3">CH3</option>
+                                <option value="CHAN4">CH4</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>SDA</label>
+                            <select id="dec1-iic-data">
+                                <option value="CHAN1">CH1</option>
+                                <option value="CHAN2" selected>CH2</option>
+                                <option value="CHAN3">CH3</option>
+                                <option value="CHAN4">CH4</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Address</label>
+                            <select id="dec1-iic-addr">
+                                <option value="NORM">Normal</option>
+                                <option value="RW">R/W</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- SPI config -->
+                    <div class="decoder-config" id="dec1-spi-cfg" style="display:none">
+                        <div class="decoder-config-title">SPI Settings</div>
+                        <div class="ctrl-select">
+                            <label>CLK</label>
+                            <select id="dec1-spi-clk">
+                                <option value="CHAN1">CH1</option>
+                                <option value="CHAN2">CH2</option>
+                                <option value="CHAN3">CH3</option>
+                                <option value="CHAN4">CH4</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>MISO</label>
+                            <select id="dec1-spi-miso">
+                                <option value="OFF">OFF</option>
+                                <option value="CHAN1">CH1</option>
+                                <option value="CHAN2" selected>CH2</option>
+                                <option value="CHAN3">CH3</option>
+                                <option value="CHAN4">CH4</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>MOSI</label>
+                            <select id="dec1-spi-mosi">
+                                <option value="OFF">OFF</option>
+                                <option value="CHAN1">CH1</option>
+                                <option value="CHAN2">CH2</option>
+                                <option value="CHAN3">CH3</option>
+                                <option value="CHAN4">CH4</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>CS</label>
+                            <select id="dec1-spi-cs">
+                                <option value="OFF">OFF</option>
+                                <option value="CHAN1">CH1</option>
+                                <option value="CHAN2">CH2</option>
+                                <option value="CHAN3">CH3</option>
+                                <option value="CHAN4">CH4</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Edge</label>
+                            <select id="dec1-spi-edge">
+                                <option value="RIS">Rise</option>
+                                <option value="FAL">Fall</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Polarity</label>
+                            <select id="dec1-spi-pol">
+                                <option value="POS">Pos</option>
+                                <option value="NEG">Neg</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Endian</label>
+                            <select id="dec1-spi-end">
+                                <option value="LSB">LSB</option>
+                                <option value="MSB">MSB</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Width</label>
+                            <input type="number" class="ctrl-input" id="dec1-spi-width" value="8" min="8" max="32">
+                        </div>
+                    </div>
+
+                    <!-- PARALLEL config -->
+                    <div class="decoder-config" id="dec1-par-cfg" style="display:none">
+                        <div class="decoder-config-title">Parallel Settings</div>
+                        <div class="ctrl-select">
+                            <label>CLK</label>
+                            <select id="dec1-par-clk">
+                                <option value="OFF">OFF</option>
+                                <option value="CHAN1">CH1</option>
+                                <option value="CHAN2">CH2</option>
+                                <option value="CHAN3">CH3</option>
+                                <option value="CHAN4">CH4</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Edge</label>
+                            <select id="dec1-par-edge">
+                                <option value="RIS">Rise</option>
+                                <option value="FAL">Fall</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Width</label>
+                            <input type="number" class="ctrl-input" id="dec1-par-width" value="8" min="1" max="16">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Decoder 2 -->
+            <div class="decoder-slot" id="dec-slot-2">
+                <div class="decoder-slot-header" data-dec="2">
+                    <span class="decoder-slot-label">Decoder 2</span>
+                    <span class="decoder-collapse-icon">&#9660;</span>
+                </div>
+                <div class="decoder-slot-body" id="dec-body-2">
+                    <div class="ctrl-select">
+                        <label>Mode</label>
+                        <select id="dec2-mode">
+                            <option value="OFF">OFF</option>
+                            <option value="UART">UART</option>
+                            <option value="IIC">IIC</option>
+                            <option value="SPI">SPI</option>
+                            <option value="PAR">PARALLEL</option>
+                        </select>
+                    </div>
+                    <div class="toggle-row">
+                        <label>Display</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="dec2-display">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="ctrl-select">
+                        <label>Format</label>
+                        <select id="dec2-format">
+                            <option value="HEX">HEX</option>
+                            <option value="ASC">ASCII</option>
+                            <option value="DEC">DEC</option>
+                            <option value="OCT">OCT</option>
+                            <option value="BIN">BIN</option>
+                        </select>
+                    </div>
+
+                    <!-- UART config -->
+                    <div class="decoder-config" id="dec2-uart-cfg" style="display:none">
+                        <div class="decoder-config-title">UART Settings</div>
+                        <div class="ctrl-select">
+                            <label>TX</label>
+                            <select id="dec2-uart-tx">
+                                <option value="OFF">OFF</option>
+                                <option value="CHAN1">CH1</option>
+                                <option value="CHAN2">CH2</option>
+                                <option value="CHAN3">CH3</option>
+                                <option value="CHAN4">CH4</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>RX</label>
+                            <select id="dec2-uart-rx">
+                                <option value="OFF">OFF</option>
+                                <option value="CHAN1">CH1</option>
+                                <option value="CHAN2">CH2</option>
+                                <option value="CHAN3">CH3</option>
+                                <option value="CHAN4">CH4</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Baud</label>
+                            <input type="number" class="ctrl-input" id="dec2-uart-baud" value="9600" min="110" max="20000000">
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Polarity</label>
+                            <select id="dec2-uart-pol">
+                                <option value="NEG">Normal</option>
+                                <option value="POS">Invert</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Data bits</label>
+                            <select id="dec2-uart-width">
+                                <option value="5">5</option>
+                                <option value="6">6</option>
+                                <option value="7">7</option>
+                                <option value="8" selected>8</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Stop bits</label>
+                            <select id="dec2-uart-stop">
+                                <option value="1" selected>1</option>
+                                <option value="1.5">1.5</option>
+                                <option value="2">2</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Parity</label>
+                            <select id="dec2-uart-par">
+                                <option value="NONE" selected>None</option>
+                                <option value="EVEN">Even</option>
+                                <option value="ODD">Odd</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Endian</label>
+                            <select id="dec2-uart-end">
+                                <option value="LSB" selected>LSB</option>
+                                <option value="MSB">MSB</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- IIC config -->
+                    <div class="decoder-config" id="dec2-iic-cfg" style="display:none">
+                        <div class="decoder-config-title">IIC Settings</div>
+                        <div class="ctrl-select">
+                            <label>SCL</label>
+                            <select id="dec2-iic-clk">
+                                <option value="CHAN1">CH1</option>
+                                <option value="CHAN2">CH2</option>
+                                <option value="CHAN3">CH3</option>
+                                <option value="CHAN4">CH4</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>SDA</label>
+                            <select id="dec2-iic-data">
+                                <option value="CHAN1">CH1</option>
+                                <option value="CHAN2" selected>CH2</option>
+                                <option value="CHAN3">CH3</option>
+                                <option value="CHAN4">CH4</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Address</label>
+                            <select id="dec2-iic-addr">
+                                <option value="NORM">Normal</option>
+                                <option value="RW">R/W</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- SPI config -->
+                    <div class="decoder-config" id="dec2-spi-cfg" style="display:none">
+                        <div class="decoder-config-title">SPI Settings</div>
+                        <div class="ctrl-select">
+                            <label>CLK</label>
+                            <select id="dec2-spi-clk">
+                                <option value="CHAN1">CH1</option>
+                                <option value="CHAN2">CH2</option>
+                                <option value="CHAN3">CH3</option>
+                                <option value="CHAN4">CH4</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>MISO</label>
+                            <select id="dec2-spi-miso">
+                                <option value="OFF">OFF</option>
+                                <option value="CHAN1">CH1</option>
+                                <option value="CHAN2" selected>CH2</option>
+                                <option value="CHAN3">CH3</option>
+                                <option value="CHAN4">CH4</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>MOSI</label>
+                            <select id="dec2-spi-mosi">
+                                <option value="OFF">OFF</option>
+                                <option value="CHAN1">CH1</option>
+                                <option value="CHAN2">CH2</option>
+                                <option value="CHAN3">CH3</option>
+                                <option value="CHAN4">CH4</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>CS</label>
+                            <select id="dec2-spi-cs">
+                                <option value="OFF">OFF</option>
+                                <option value="CHAN1">CH1</option>
+                                <option value="CHAN2">CH2</option>
+                                <option value="CHAN3">CH3</option>
+                                <option value="CHAN4">CH4</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Edge</label>
+                            <select id="dec2-spi-edge">
+                                <option value="RIS">Rise</option>
+                                <option value="FAL">Fall</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Polarity</label>
+                            <select id="dec2-spi-pol">
+                                <option value="POS">Pos</option>
+                                <option value="NEG">Neg</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Endian</label>
+                            <select id="dec2-spi-end">
+                                <option value="LSB">LSB</option>
+                                <option value="MSB">MSB</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Width</label>
+                            <input type="number" class="ctrl-input" id="dec2-spi-width" value="8" min="8" max="32">
+                        </div>
+                    </div>
+
+                    <!-- PARALLEL config -->
+                    <div class="decoder-config" id="dec2-par-cfg" style="display:none">
+                        <div class="decoder-config-title">Parallel Settings</div>
+                        <div class="ctrl-select">
+                            <label>CLK</label>
+                            <select id="dec2-par-clk">
+                                <option value="OFF">OFF</option>
+                                <option value="CHAN1">CH1</option>
+                                <option value="CHAN2">CH2</option>
+                                <option value="CHAN3">CH3</option>
+                                <option value="CHAN4">CH4</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Edge</label>
+                            <select id="dec2-par-edge">
+                                <option value="RIS">Rise</option>
+                                <option value="FAL">Fall</option>
+                            </select>
+                        </div>
+                        <div class="ctrl-select">
+                            <label>Width</label>
+                            <input type="number" class="ctrl-input" id="dec2-par-width" value="8" min="1" max="16">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            </div><!-- /collapsible-body -->
+        </div>
+
+        <!-- Cursors -->
+        <div class="panel-section">
+            <div class="panel-section-title">Cursors</div>
+            <div class="ctrl-select">
+                <label>Mode</label>
+                <select id="cursor-mode">
+                    <option value="off">Off</option>
+                    <option value="x">X (Time)</option>
+                    <option value="y">Y (Voltage)</option>
+                </select>
+            </div>
+            <div id="cursor-readout" style="display:none; margin-top:4px; font-size:11px; font-family:Consolas,Menlo,monospace;">
+            </div>
+        </div>
+
+        <!-- Screenshot & Save -->
+        <div class="panel-section">
+            <div class="panel-section-title">Screenshot &amp; Save</div>
+
+            <div class="toggle-row">
+                <label>Show overlay</label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="screenshot-toggle">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+
+            <div class="slider-row" id="opacity-row" style="display: none;">
+                <label>Opacity</label>
+                <input type="range" id="opacity-slider" min="0" max="100" value="50">
+                <span class="slider-val" id="opacity-val">50%</span>
+            </div>
+
+            <div class="save-section" style="margin-top: 6px;">
+                <button class="btn" id="btn-screenshot">Save Screenshot</button>
+                <button class="btn" id="btn-screenshot-inv">Save Screenshot (inverted)</button>
+                <button class="btn" id="btn-screenshot-gray">Save Screenshot (grayscale)</button>
+                <button class="btn" id="btn-save-canvas">Save Canvas</button>
+                <button class="btn" id="btn-save-csv">Save Data (CSV)</button>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- ═══ Power analysis view ═══ -->
+<section class="analysis-view" id="view-analysis" hidden aria-label="Power analysis">
+
+    <div class="an-toolbar">
+        <div class="field">
+            <span class="field-label">Source</span>
+            <div class="segmented" id="an-source" role="radiogroup" aria-label="Capture source">
+                <button role="radio" data-source="screen" aria-checked="true">Screen (1200 pts)</button>
+                <button role="radio" data-source="raw" aria-checked="false">RAW memory</button>
+            </div>
+            <button class="btn" id="an-open">Open…</button>
+            <input type="file" id="an-file" accept=".csv,.npz" hidden>
+        </div>
+        <div class="field" id="an-depth-field">
+            <label for="an-depth">RAW depth</label>
+            <select class="select" id="an-depth" title="Memory depth applied before arming (valid values depend on the enabled channels)"></select>
+        </div>
+        <div class="field">
+            <button class="btn pill-btn" id="an-chan-btn" aria-haspopup="dialog" title="Choose the voltage and current channels">V: CH1 · I: CH4</button>
+        </div>
+        <div class="field">
+            <label for="an-ithr">I threshold</label>
+            <input class="input num" id="an-ithr" value="1" inputmode="decimal" aria-label="Current threshold in amps">
+            <span class="unit">A</span>
+        </div>
+        <button class="btn toggle" id="an-hold" aria-pressed="false" title="Keep this capture while new ones arrive">Hold</button>
+        <span class="held-note" id="an-held" hidden><span id="an-held-text"></span><button id="an-held-show">Show latest</button></span>
+        <div class="raw-progress" id="an-progress" hidden>
+            <span id="an-prog-text" class="mono"></span>
+            <span class="bar"><i id="an-prog-bar"></i></span>
+            <button class="btn" id="an-prog-cancel">Cancel</button>
+        </div>
+    </div>
+
+    <div class="an-plot-wrap" id="an-plot-wrap">
+        <canvas id="an-canvas" tabindex="0" aria-label="Voltage, current and power plot"></canvas>
+        <div class="an-badges">
+            <span class="badge warn" id="an-incoherent" hidden>Channels may be from different triggers</span>
+            <span class="badge" id="an-info" hidden></span>
+        </div>
+        <div class="empty-state" id="an-empty">
+            <b>No capture yet</b>
+            <span>Press <b style="display:inline">Capture</b> (C) with Source = Screen or RAW memory, or open a .csv / .npz file.</span>
+        </div>
+    </div>
+
+    <div class="an-under">
+        <span class="field cursor-field"><label class="a" for="an-t0">t0</label><input class="input time" id="an-t0" aria-label="Window start"></span>
+        <span class="field cursor-field"><label class="b" for="an-t1">t1</label><input class="input time" id="an-t1" aria-label="Window end"></span>
+        <button class="btn" id="an-all" title="A">Window = all</button>
+        <button class="btn" id="an-zoomwin" title="Z">Zoom to window</button>
+        <button class="btn" id="an-resetzoom">Reset zoom</button>
+        <span class="spacer"></span>
+        <button class="btn" id="an-png">PNG</button>
+        <button class="btn" id="an-png-print" title="Light theme, for printing">PNG (print)</button>
+        <button class="btn" id="an-csv" title="CSV of the window only">CSV</button>
+        <button class="btn" id="an-npz">Save .npz</button>
+    </div>
+
+    <div class="an-side">
+        <div class="an-bottom">
+            <section class="card" id="an-results" aria-label="Results">
+                <div class="card-title"><span>Results</span><span class="meta" id="an-results-meta"></span></div>
+                <table class="results-table"><tbody id="an-results-body"></tbody></table>
+                <div class="note-dim" id="an-results-note"></div>
+            </section>
+            <section class="card" id="an-params" aria-label="Parameters">
+                <div class="card-title"><span>Parameters</span><button class="btn" id="an-add-btn" aria-haspopup="dialog">Add parameter</button></div>
+                <ul class="param-list" id="an-param-list"></ul>
+                <div class="note-dim">Image: parameters drawn on the plot and in the PNG. * = scope measurement over the whole screen.</div>
+            </section>
+        </div>
+    </div>
+</section>
+
+<!-- Popovers (opened by analysis/view.js and analysis/params.js) -->
+<div class="popover" id="an-chan-pop" role="dialog" aria-label="Channels">
+    <h3>Channels</h3>
+    <div class="row"><label for="an-vch">Voltage</label>
+        <select class="select" id="an-vch"><option value="1">CH1</option><option value="2">CH2</option><option value="3">CH3</option><option value="4">CH4</option></select></div>
+    <div class="row"><label for="an-ich">Current</label>
+        <select class="select" id="an-ich"><option value="1">CH1</option><option value="2">CH2</option><option value="3">CH3</option><option value="4" selected>CH4</option></select></div>
+    <div class="actions"><button class="btn primary" id="an-chan-apply">Apply</button></div>
+</div>
+<div class="popover" id="an-add-pop" role="dialog" aria-label="Add parameter"></div>
+<div class="popover" id="an-csv-pop" role="dialog" aria-label="Choose channels of the file">
+    <h3>Which channels?</h3>
+    <p id="an-csv-msg" class="note-dim" style="margin-bottom:6px"></p>
+    <div class="row"><label for="an-csv-v">Voltage</label><select class="select" id="an-csv-v"></select></div>
+    <div class="row"><label for="an-csv-i">Current</label><select class="select" id="an-csv-i"></select></div>
+    <div class="actions"><button class="btn" id="an-csv-cancel">Cancel</button><button class="btn primary" id="an-csv-ok">Open</button></div>
+</div>
+
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>

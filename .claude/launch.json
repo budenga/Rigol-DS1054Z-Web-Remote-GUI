@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ds1054z-fake",
+      "runtimeExecutable": "/opt/homebrew/bin/python3.11",
+      "runtimeArgs": [
+        "run.py",
+        "--fake",
+        "--no-browser",
+        "--port",
+        "8082"
+      ],
+      "port": 8082
+    },
+    {
+      "name": "ds1054z-fake-8083",
+      "runtimeExecutable": "/opt/homebrew/bin/python3.11",
+      "runtimeArgs": [
+        "run.py",
+        "--fake",
+        "--no-browser",
+        "--port",
+        "8083"
+      ],
+      "port": 8083
+    }
+  ]
+}
