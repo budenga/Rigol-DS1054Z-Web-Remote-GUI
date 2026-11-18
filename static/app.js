@@ -157,6 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
     _connText = document.getElementById('conn-text');
 
     initTheme(document.getElementById('btn-theme'));
+    document.getElementById('btn-logs').addEventListener('click', openLogFolder);
     initRenderer();
     initControls();
     initMeasurements();
@@ -168,3 +169,18 @@ document.addEventListener('DOMContentLoaded', () => {
     _initKeys();
     _connect();
 });
+
+/** Ask the server to open its log folder in Finder (only works from the server's own machine). */
+async function openLogFolder() {
+    try {
+        const r = await fetch('/logs/open', { method: 'POST' });
+        const j = await r.json();
+        if (j.ok) {
+            toast(j.active ? 'Log folder opened' : 'Logging is off (start with --debug). Opened the folder with earlier logs.', j.active ? 'ok' : 'warn');
+        } else {
+            toast(j.error || 'Cannot open the log folder', 'warn');
+        }
+    } catch (e) {
+        toast('Cannot reach the server', 'error');
+    }
+}

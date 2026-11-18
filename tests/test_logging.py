@@ -86,3 +86,37 @@ def test_old_logs_are_pruned(tmp_path):
         os.utime(f, (1_600_000_000 + i, 1_600_000_000 + i))
     logsetup.setup_logging(True, tmp_path)
     assert len(list(tmp_path.glob("ds1054z_*.log"))) == logsetup.KEEP_FILES
+
+
+def test_open_log_folder_endpoint(monkeypatch, tmp_path):
+    opened = []
+    monkeypatch.setattr(logsetup, "open_folder", lambda p: opened.append(str(p)) or True)
+    with _start(monkeypatch, True, tmp_path) as client:
+        r = client.post("/logs/open")
+        assert r.status_code == 200
+        assert r.json() == {"ok": True, "path": str(tmp_path), "active": True}
+    assert opened == [str(tmp_path)]
+
+
+def test_open_log_folder_without_debug_uses_existing_dir(monkeypatch, tmp_path):
+    opened = []
+    monkeypatch.setattr(logsetup, "open_folder", lambda p: opened.append(str(p)) or True)
+    with _start(monkeypatch, False, tmp_path) as client:
+        r = client.post("/logs/open")
+        assert r.json()["active"] is False and r.json()["ok"] is True
+    assert opened == [str(tmp_path)]
+
+
+def test_open_log_folder_missing_dir(monkeypatch, tmp_path):
+    monkeypatch.setattr(logsetup, "open_folder", lambda p: pytest.fail("must not open"))
+    with _start(monkeypatch, False, tmp_path / "nope") as client:
+        r = client.post("/logs/open")
+        assert r.status_code == 404 and "--debug" in r.json()["error"]
+
+
+def test_open_log_folder_refused_for_remote_clients(monkeypatch, tmp_path):
+    monkeypatch.setattr(logsetup, "open_folder", lambda p: pytest.fail("must not open"))
+    _start(monkeypatch, False, tmp_path)                       # applies the monkeypatches
+    with TestClient(appmod.app, client=("192.168.1.50", 5555)) as remote:
+        r = remote.post("/logs/open")
+        assert r.status_code == 403

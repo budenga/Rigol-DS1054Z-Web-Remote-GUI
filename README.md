@@ -90,6 +90,7 @@ python3.11 ds1054z-cli.py --debug 192.168.1.100 info   # CLI: option goes before
 - Default directory: `~/Library/Logs/Rigol_DS1054Z` on macOS (visible in Console.app), `~/.local/state/rigol_ds1054z/logs` elsewhere. The path is printed at start-up.
 - The file records DEBUG for `rigol.*` and `server.*`: every SCPI write and query with the reply, block lengths, RAW chunk ranges and timings, trigger status changes, reconnects, and the uvicorn access log. The first lines hold the arguments, Python version and scope target; `*IDN?` is logged once connected. Binary payloads are never logged (lengths only) and text replies are cut at 200 characters.
 - The console stays at INFO. `DS1054Z_DEBUG=1` still prints the transport trace on the console.
+- The **Logs** button in the top bar opens the log folder in Finder (or the file manager). It works only from the machine running the server; from another computer the server refuses. Without `--debug` it opens the folder with earlier logs, or says there is none yet.
 - Without `--debug` no file is created. When testing on real hardware, run with `--debug` and keep the log if something fails.
 
 ## CLI

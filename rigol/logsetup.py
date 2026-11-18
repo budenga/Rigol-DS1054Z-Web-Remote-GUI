@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import logging.handlers
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -128,3 +129,13 @@ def shutdown_logging() -> None:
 
 def log_path() -> Path | None:
     return _log_path
+
+
+def open_folder(path: os.PathLike | str) -> bool:
+    """Show ``path`` in the system file manager (Finder / xdg-open). False if unsupported."""
+    cmd = ["open", str(path)] if sys.platform == "darwin" else ["xdg-open", str(path)]
+    try:
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except OSError:
+        return False

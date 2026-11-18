@@ -123,6 +123,30 @@ async def screenshot_invert():
     return await _screenshot(True)
 
 
+# --- log folder --------------------------------------------------------------
+
+_LOCAL_CLIENTS = {"127.0.0.1", "::1", "::ffff:127.0.0.1", "testclient"}
+
+
+@app.post("/logs/open")
+async def logs_open(request: Request):
+    """Open the log folder in the file manager of the machine running the server.
+
+    Loopback clients only: the server listens on all interfaces, and a page on another
+    machine must not be able to pop windows on this one.
+    """
+    if not request.client or request.client.host not in _LOCAL_CLIENTS:
+        return _err(403, "Only available from the machine running the server")
+    current = logsetup.log_path()
+    folder = current.parent if current else Path(LOG_DIR).expanduser() if LOG_DIR \
+        else logsetup.default_log_dir()
+    if not folder.is_dir():
+        return _err(404, "No log folder yet. Start the server with --debug to create one.")
+    if not logsetup.open_folder(folder):
+        return _err(501, f"Cannot open a file manager here. Logs are in {folder}")
+    return {"ok": True, "path": str(folder), "active": current is not None}
+
+
 # --- analysis import / export ------------------------------------------------
 
 def _err(status: int, msg: str, **extra) -> JSONResponse:

@@ -96,7 +96,7 @@ Pure numpy. `AnalysisCapture` (v, i float32 with NaN where raw is 0/255; `p = v*
 
 ### Logging (`rigol/logsetup.py`)
 
-`setup_logging(debug, log_dir, app)` is idempotent (run.py calls it early to print the path, the server `lifespan` calls it again after uvicorn has reset its own loggers and removes the handlers at shutdown). Console INFO; with `--debug` a `RotatingFileHandler` (5 MB × 5, one file per run, newest 20 kept) records DEBUG for `rigol`/`server` plus uvicorn INFO. Debug traces live in `transport.py` (`SEND/DONE/BLOCK header/QUERY`) and the trigger watcher. Tests: `tests/test_logging.py`. Never log binary payloads (lengths only) and never write logs inside the project folder.
+`setup_logging(debug, log_dir, app)` is idempotent (run.py calls it early to print the path, the server `lifespan` calls it again after uvicorn has reset its own loggers and removes the handlers at shutdown). Console INFO; with `--debug` a `RotatingFileHandler` (5 MB × 5, one file per run, newest 20 kept) records DEBUG for `rigol`/`server` plus uvicorn INFO. Debug traces live in `transport.py` (`SEND/DONE/BLOCK header/QUERY`) and the trigger watcher. `POST /logs/open` (loopback clients only) opens the log folder via `logsetup.open_folder`; the top-bar **Logs** button calls it. Tests: `tests/test_logging.py`. Never log binary payloads (lengths only) and never write logs inside the project folder.
 
 ### Fake scope (`rigol/fake_scope.py`)
 
