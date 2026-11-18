@@ -1,5 +1,7 @@
 # Rigol DS1054Z Web Remote
 
+[![tests](https://github.com/budenga/Rigol-DS1054Z-Web-Remote-GUI/actions/workflows/tests.yml/badge.svg)](https://github.com/budenga/Rigol-DS1054Z-Web-Remote-GUI/actions/workflows/tests.yml)
+
 Remote control GUI for the Rigol DS1054Z oscilloscope (and DS1000Z/MSO1000Z series), accessible from any browser on the local network.
 
 ## Features
@@ -207,4 +209,4 @@ The same transport, scheduler and discovery modules can be reused for other Rigo
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Not affiliated with or endorsed by RIGOL Technologies.
+MIT — see [LICENSE](LICENSE). Changes are listed in [CHANGELOG.md](CHANGELOG.md). Not affiliated with or endorsed by RIGOL Technologies.
